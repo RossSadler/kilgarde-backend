@@ -8,7 +8,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 if (!process.env.OPENAI_API_KEY) {
-  console.error("Missing OPENAI_API_KEY in environment");
+  console.error("Missing OPENAI_API_KEY in .env");
   process.exit(1);
 }
 
@@ -16,11 +16,34 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-app.use(express.json({ limit: "2mb" }));
+const allowedOrigins = [
+  "https://kilgarde.studio",
+  "https://www.kilgarde.studio",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
+];
 
-app.get("/", (req, res) => {
-  res.send("Kilgarde backend running");
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Max-Age", "86400");
+
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
+  next();
 });
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.static("."));
 
 function buildMapPrompt({
   title = "Untitled Scenario",
@@ -154,7 +177,7 @@ Escalation influence:
 ${escalation}
 
 Output a single printable tactical battle map image.
-`.trim();
+  `.trim();
 }
 
 app.post("/api/generate-map", async (req, res) => {
@@ -232,5 +255,5 @@ app.post("/api/generate-map", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log("Kilgarde backend running on port " + port);
+  console.log("Kilgarde server running at http://localhost:" + port);
 });
