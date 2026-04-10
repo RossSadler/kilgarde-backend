@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import OpenAI from "openai";
+import crypto from "crypto";
 
 dotenv.config();
 
@@ -44,6 +45,62 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("."));
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+// In-memory daily rate limiting
+const requestCounts = new Map();
+const MAX_REQUESTS_PER_DAY = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// In-memory cache
+const mapCache = new Map();
+
+function getClientKey(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+
+  return req.socket.remoteAddress || "unknown";
+}
+
+function pruneOldTimestamps(timestamps) {
+  const now = Date.now();
+  return timestamps.filter((ts) => now - ts < DAY_MS);
+}
+
+function getRemainingRequests(req) {
+  const key = getClientKey(req);
+  const timestamps = pruneOldTimestamps(requestCounts.get(key) || []);
+  requestCounts.set(key, timestamps);
+  return Math.max(0, MAX_REQUESTS_PER_DAY - timestamps.length);
+}
+
+function isRateLimited(req) {
+  const key = getClientKey(req);
+  const now = Date.now();
+  const timestamps = pruneOldTimestamps(requestCounts.get(key) || []);
+
+  if (timestamps.length >= MAX_REQUESTS_PER_DAY) {
+    requestCounts.set(key, timestamps);
+    return true;
+  }
+
+  timestamps.push(now);
+  requestCounts.set(key, timestamps);
+  return false;
+}
+
+function buildCacheKey(payload) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(payload))
+    .digest("hex");
+}
 
 function buildMapPrompt({
   title = "Untitled Scenario",
@@ -203,17 +260,37 @@ app.post("/api/generate-map", async (req, res) => {
       });
     }
 
-    const prompt = buildMapPrompt({
+    const normalizedPayload = {
       title,
       locationType,
       threatType,
       objectiveType,
       location,
-      terrain,
+      terrain: Array.isArray(terrain) ? terrain : [],
       map,
       twist,
       escalation
-    });
+    };
+
+    const cacheKey = buildCacheKey(normalizedPayload);
+
+    if (mapCache.has(cacheKey)) {
+      console.log("Returning cached map:", cacheKey);
+
+      return res.json({
+        ...mapCache.get(cacheKey),
+        cached: true,
+        remainingToday: getRemainingRequests(req)
+      });
+    }
+
+    if (isRateLimited(req)) {
+      return res.status(429).json({
+        error: "Daily map limit reached. Try again tomorrow."
+      });
+    }
+
+    const prompt = buildMapPrompt(normalizedPayload);
 
     console.log("Prompt built successfully.");
     console.log("Calling OpenAI Images API...");
@@ -235,9 +312,17 @@ app.post("/api/generate-map", async (req, res) => {
       });
     }
 
-    return res.json({
+    const result = {
       mimeType: "image/png",
       imageBase64
+    };
+
+    mapCache.set(cacheKey, result);
+
+    return res.json({
+      ...result,
+      cached: false,
+      remainingToday: getRemainingRequests(req)
     });
   } catch (error) {
     console.error("Map generation failed.");
