@@ -17,17 +17,23 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const allowedOrigins = [
+const ALLOWED_ORIGINS = [
   "https://kilgarde.studio",
   "https://www.kilgarde.studio",
   "http://localhost:3000",
   "http://127.0.0.1:3000"
 ];
 
+const MAX_REQUESTS_PER_DAY = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const requestCounts = new Map();
+const mapCache = new Map();
+
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
   }
 
@@ -45,18 +51,6 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("."));
-
-app.get("/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
-// In-memory daily rate limiting
-const requestCounts = new Map();
-const MAX_REQUESTS_PER_DAY = 5;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-// In-memory cache
-const mapCache = new Map();
 
 function getClientKey(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -80,19 +74,19 @@ function getRemainingRequests(req) {
   return Math.max(0, MAX_REQUESTS_PER_DAY - timestamps.length);
 }
 
-function isRateLimited(req) {
+function consumeRequest(req) {
   const key = getClientKey(req);
   const now = Date.now();
   const timestamps = pruneOldTimestamps(requestCounts.get(key) || []);
 
   if (timestamps.length >= MAX_REQUESTS_PER_DAY) {
     requestCounts.set(key, timestamps);
-    return true;
+    return false;
   }
 
   timestamps.push(now);
   requestCounts.set(key, timestamps);
-  return false;
+  return true;
 }
 
 function buildCacheKey(payload) {
@@ -237,10 +231,21 @@ Output a single printable tactical battle map image.
   `.trim();
 }
 
-app.post("/api/generate-map", async (req, res) => {
-  console.log("---- /api/generate-map called ----");
-  console.log("Incoming payload:", JSON.stringify(req.body, null, 2));
+app.get("/health", (req, res) => {
+  return res.json({
+    status: "ok",
+    service: "kilgarde-backend"
+  });
+});
 
+app.get("/api/map-credits", (req, res) => {
+  return res.json({
+    remainingToday: getRemainingRequests(req),
+    dailyLimit: MAX_REQUESTS_PER_DAY
+  });
+});
+
+app.post("/api/generate-map", async (req, res) => {
   try {
     const {
       title,
@@ -275,25 +280,29 @@ app.post("/api/generate-map", async (req, res) => {
     const cacheKey = buildCacheKey(normalizedPayload);
 
     if (mapCache.has(cacheKey)) {
-      console.log("Returning cached map:", cacheKey);
+      console.log(`[MAP CACHE HIT] ${title}`);
 
       return res.json({
         ...mapCache.get(cacheKey),
         cached: true,
-        remainingToday: getRemainingRequests(req)
+        remainingToday: getRemainingRequests(req),
+        dailyLimit: MAX_REQUESTS_PER_DAY
       });
     }
 
-    if (isRateLimited(req)) {
+    if (!consumeRequest(req)) {
+      console.log(`[MAP RATE LIMITED] ${title}`);
+
       return res.status(429).json({
-        error: "Daily map limit reached. Try again tomorrow."
+        error: "Daily map limit reached. Try again tomorrow.",
+        remainingToday: 0,
+        dailyLimit: MAX_REQUESTS_PER_DAY
       });
     }
+
+    console.log(`[MAP GENERATE] ${title}`);
 
     const prompt = buildMapPrompt(normalizedPayload);
-
-    console.log("Prompt built successfully.");
-    console.log("Calling OpenAI Images API...");
 
     const response = await client.images.generate({
       model: "gpt-image-1",
@@ -304,9 +313,6 @@ app.post("/api/generate-map", async (req, res) => {
     const imageBase64 = response?.data?.[0]?.b64_json;
 
     if (!imageBase64) {
-      console.error("No image returned from OpenAI.");
-      console.error("Raw response:", JSON.stringify(response, null, 2));
-
       return res.status(502).json({
         error: "No image returned from OpenAI."
       });
@@ -322,16 +328,11 @@ app.post("/api/generate-map", async (req, res) => {
     return res.json({
       ...result,
       cached: false,
-      remainingToday: getRemainingRequests(req)
+      remainingToday: getRemainingRequests(req),
+      dailyLimit: MAX_REQUESTS_PER_DAY
     });
   } catch (error) {
-    console.error("Map generation failed.");
-    console.error("Message:", error?.message || "Unknown error");
-    console.error("Status:", error?.status || "none");
-
-    if (error?.response) {
-      console.error("Response:", JSON.stringify(error.response, null, 2));
-    }
+    console.error("Map generation failed:", error?.message || "Unknown error");
 
     return res.status(500).json({
       error: error?.message || "Map generation failed"
@@ -340,5 +341,5 @@ app.post("/api/generate-map", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log("Kilgarde server running at http://localhost:" + port);
+  console.log(`Kilgarde server running at http://localhost:${port}`);
 });
