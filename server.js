@@ -8,7 +8,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 if (!process.env.OPENAI_API_KEY) {
-  console.error("Missing OPENAI_API_KEY in .env");
+  console.error("Missing OPENAI_API_KEY in environment");
   process.exit(1);
 }
 
@@ -17,7 +17,10 @@ const client = new OpenAI({
 });
 
 app.use(express.json({ limit: "2mb" }));
-app.use(express.static("."));
+
+app.get("/", (req, res) => {
+  res.send("Kilgarde backend running");
+});
 
 function buildMapPrompt({
   title = "Untitled Scenario",
@@ -229,5 +232,5 @@ app.post("/api/generate-map", async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log("Kilgarde server running at http://localhost:" + port);
+  console.log("Kilgarde backend running on port " + port);
 });
