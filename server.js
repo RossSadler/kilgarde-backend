@@ -28,7 +28,7 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:3000"
 ];
 
-const MAX_REQUESTS_PER_DAY = 5;
+const MAX_REQUESTS_PER_DAY = 2;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const requestCounts = new Map();
@@ -344,7 +344,7 @@ app.post("/api/generate-map", async (req, res) => {
       console.log(`[MAP RATE LIMITED] ${title}`);
 
       return res.status(429).json({
-        error: "Daily map limit reached. Try again tomorrow.",
+        error: "Daily map allowance used. Try again tomorrow.",
         remainingToday: 0,
         dailyLimit: MAX_REQUESTS_PER_DAY
       });
