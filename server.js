@@ -9,8 +9,12 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 if (!process.env.OPENAI_API_KEY) {
-  console.error("Missing OPENAI_API_KEY in .env");
+  console.error("Missing OPENAI_API_KEY in environment");
   process.exit(1);
+}
+
+if (!process.env.ADMIN_RESET_KEY) {
+  console.warn("Warning: ADMIN_RESET_KEY is not set. Admin reset routes will not work.");
 }
 
 const client = new OpenAI({
@@ -39,7 +43,10 @@ app.use((req, res, next) => {
 
   res.header("Vary", "Origin");
   res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-admin-reset-key"
+  );
   res.header("Access-Control-Max-Age", "86400");
 
   if (req.method === "OPTIONS") {
@@ -241,6 +248,49 @@ app.get("/health", (req, res) => {
 app.get("/api/map-credits", (req, res) => {
   return res.json({
     remainingToday: getRemainingRequests(req),
+    dailyLimit: MAX_REQUESTS_PER_DAY
+  });
+});
+
+app.post("/api/admin/reset-map-credits", (req, res) => {
+  const adminKey = req.headers["x-admin-reset-key"];
+
+  if (!process.env.ADMIN_RESET_KEY || adminKey !== process.env.ADMIN_RESET_KEY) {
+    return res.status(403).json({
+      error: "Forbidden"
+    });
+  }
+
+  const key = getClientKey(req);
+  requestCounts.delete(key);
+
+  console.log(`[ADMIN RESET] Credits reset for client ${key}`);
+
+  return res.json({
+    success: true,
+    message: "Map credits reset for this client",
+    remainingToday: MAX_REQUESTS_PER_DAY,
+    dailyLimit: MAX_REQUESTS_PER_DAY
+  });
+});
+
+app.post("/api/admin/reset-all-map-credits", (req, res) => {
+  const adminKey = req.headers["x-admin-reset-key"];
+
+  if (!process.env.ADMIN_RESET_KEY || adminKey !== process.env.ADMIN_RESET_KEY) {
+    return res.status(403).json({
+      error: "Forbidden"
+    });
+  }
+
+  requestCounts.clear();
+
+  console.log("[ADMIN RESET] Credits reset for all clients");
+
+  return res.json({
+    success: true,
+    message: "Map credits reset for all clients",
+    remainingToday: MAX_REQUESTS_PER_DAY,
     dailyLimit: MAX_REQUESTS_PER_DAY
   });
 });
