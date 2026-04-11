@@ -411,8 +411,6 @@ app.post("/api/generate-map", async (req, res) => {
   }
 });
 
-// ===== ANALYTICS =====
-
 app.post("/api/track", async (req, res) => {
   try {
     if (!pool) {
