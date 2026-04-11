@@ -494,3 +494,56 @@ app.get("/api/metrics/summary", async (req, res) => {
 app.listen(port, () => {
   console.log(`Kilgarde server running at http://localhost:${port}`);
 });
+app.get("/api/metrics/dashboard", async (req, res) => {
+  if (!pool) {
+    return res.status(500).json({ error: "Analytics database not configured" });
+  }
+
+  try {
+    const totalEvents = await pool.query(`
+      SELECT COUNT(*) FROM tool_events;
+    `);
+
+    const sessions = await pool.query(`
+      SELECT COUNT(DISTINCT session_id) FROM tool_events;
+    `);
+
+    const eventsByType = await pool.query(`
+      SELECT event_type, COUNT(*) as count
+      FROM tool_events
+      GROUP BY event_type;
+    `);
+
+    const conversion = await pool.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE event_type = 'generate_success')::float /
+        NULLIF(COUNT(*) FILTER (WHERE event_type = 'generate_clicked'), 0)
+        AS conversion_rate
+      FROM tool_events;
+    `);
+
+    const daily = await pool.query(`
+      SELECT
+        DATE_TRUNC('day', created_at) AS day,
+        COUNT(*) AS total_events,
+        COUNT(DISTINCT session_id) AS sessions,
+        COUNT(*) FILTER (WHERE event_type = 'generate_success') AS generates
+      FROM tool_events
+      GROUP BY day
+      ORDER BY day DESC
+      LIMIT 30;
+    `);
+
+    res.json({
+      totalEvents: Number(totalEvents.rows[0].count),
+      sessions: Number(sessions.rows[0].count),
+      conversionRate: conversion.rows[0].conversion_rate || 0,
+      eventsByType: eventsByType.rows,
+      daily: daily.rows
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "failed" });
+  }
+});
