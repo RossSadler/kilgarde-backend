@@ -484,7 +484,10 @@ app.get("/api/metrics/summary", async (req, res) => {
     return res.json(result.rows);
   } catch (err) {
     console.error("METRICS ERROR:", err);
-    return res.status(500).json({ error: "failed" });
+    return res.status(500).json({
+      error: "failed",
+      detail: err.message
+    });
   }
 });
 
