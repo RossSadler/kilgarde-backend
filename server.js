@@ -1,7 +1,11 @@
-
+import express from "express";
+import cors from "cors";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import crypto from "crypto";
+import pkg from "pg";
+
+const { Pool } = pkg;
 
 dotenv.config();
 
@@ -20,6 +24,15 @@ if (!process.env.ADMIN_RESET_KEY) {
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false
+      }
+    })
+  : null;
 
 const ALLOWED_ORIGINS = [
   "https://kilgarde.studio",
@@ -56,6 +69,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("."));
 
@@ -245,6 +259,13 @@ app.get("/health", (req, res) => {
   });
 });
 
+app.get("/api/health", (req, res) => {
+  return res.json({
+    ok: true,
+    service: "kilgarde-backend"
+  });
+});
+
 app.get("/api/map-credits", (req, res) => {
   return res.json({
     remainingToday: getRemainingRequests(req),
@@ -390,35 +411,16 @@ app.post("/api/generate-map", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Kilgarde server running at http://localhost:${port}`);
-});
-import express from "express";
-import cors from "cors";
-import pkg from "pg";
+// ===== ANALYTICS =====
 
-const { Pool } = pkg;
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// ===== DATABASE =====
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-// ===== HEALTH CHECK =====
-app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
-});
-
-// ===== TRACK EVENT =====
 app.post("/api/track", async (req, res) => {
   try {
+    if (!pool) {
+      return res.status(503).json({
+        error: "Analytics database not configured"
+      });
+    }
+
     const {
       tool_name,
       tool_version,
@@ -456,35 +458,38 @@ app.post("/api/track", async (req, res) => {
       ]
     );
 
-    res.json({ ok: true });
+    return res.json({ ok: true });
   } catch (err) {
     console.error("TRACK ERROR:", err);
-    res.status(500).json({ error: "failed" });
+    return res.status(500).json({ error: "failed" });
   }
 });
 
-// ===== BASIC METRICS =====
 app.get("/api/metrics/summary", async (req, res) => {
   try {
+    if (!pool) {
+      return res.status(503).json({
+        error: "Analytics database not configured"
+      });
+    }
+
     const result = await pool.query(`
       SELECT
         event_type,
-        COUNT(*) as count
+        COUNT(*)::int as count
       FROM tool_events
       WHERE created_at > NOW() - INTERVAL '7 days'
       GROUP BY event_type
       ORDER BY count DESC
     `);
 
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (err) {
     console.error("METRICS ERROR:", err);
-    res.status(500).json({ error: "failed" });
+    return res.status(500).json({ error: "failed" });
   }
 });
 
-// ===== START =====
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Analytics server running on ${PORT}`);
+app.listen(port, () => {
+  console.log(`Kilgarde server running at http://localhost:${port}`);
 });
