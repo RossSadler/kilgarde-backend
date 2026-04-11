@@ -393,3 +393,98 @@ app.post("/api/generate-map", async (req, res) => {
 app.listen(port, () => {
   console.log(`Kilgarde server running at http://localhost:${port}`);
 });
+import express from "express";
+import cors from "cors";
+import pkg from "pg";
+
+const { Pool } = pkg;
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ===== DATABASE =====
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// ===== HEALTH CHECK =====
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true });
+});
+
+// ===== TRACK EVENT =====
+app.post("/api/track", async (req, res) => {
+  try {
+    const {
+      tool_name,
+      tool_version,
+      event_type,
+      session_id,
+      page_url,
+      metadata
+    } = req.body || {};
+
+    if (!tool_name || !event_type) {
+      return res.status(400).json({
+        error: "tool_name and event_type required"
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO tool_events (
+        tool_name,
+        tool_version,
+        event_type,
+        session_id,
+        page_url,
+        metadata
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        tool_name,
+        tool_version || null,
+        event_type,
+        session_id || null,
+        page_url || null,
+        metadata || {}
+      ]
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("TRACK ERROR:", err);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// ===== BASIC METRICS =====
+app.get("/api/metrics/summary", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        event_type,
+        COUNT(*) as count
+      FROM tool_events
+      WHERE created_at > NOW() - INTERVAL '7 days'
+      GROUP BY event_type
+      ORDER BY count DESC
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("METRICS ERROR:", err);
+    res.status(500).json({ error: "failed" });
+  }
+});
+
+// ===== START =====
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Analytics server running on ${PORT}`);
+});
