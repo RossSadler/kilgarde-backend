@@ -118,20 +118,7 @@ function consumeRequest(req) {
   return true;
 }
 
-function consumeRequest(req) {
-  const key = getClientKey(req);
-  const now = Date.now();
-  const timestamps = pruneOldTimestamps(requestCounts.get(key) || []);
 
-  if (timestamps.length >= MAX_REQUESTS_PER_DAY) {
-    requestCounts.set(key, timestamps);
-    return false;
-  }
-
-  timestamps.push(now);
-  requestCounts.set(key, timestamps);
-  return true;
-}
 
 function buildCacheKey(payload) {
   return crypto
