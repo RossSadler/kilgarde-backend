@@ -10,6 +10,14 @@ const { Pool } = pkg;
 dotenv.config();
 
 const app = express();
+app.use(cors({
+  origin: [
+    "https://kilgarde.studio",
+    "http://localhost:3000"
+  ],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "x-admin-reset-key"]
+}));
 const port = process.env.PORT || 3000;
 
 if (!process.env.OPENAI_API_KEY) {
