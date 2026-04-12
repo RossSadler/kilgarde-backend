@@ -18,6 +18,7 @@ app.use(cors({
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-admin-reset-key"]
 }));
+app.options("*", cors());
 const port = process.env.PORT || 3000;
 
 if (!process.env.OPENAI_API_KEY) {
