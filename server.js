@@ -1,5 +1,5 @@
 import express from "express";
-import cors from "cors";
+const cors = require("cors");
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import crypto from "crypto";
