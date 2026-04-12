@@ -328,12 +328,12 @@ app.post("/api/generate-map", async (req, res) => {
       console.log(`[MAP CACHE HIT] ${title}`);
 
       return res.json({
-        ...mapCache.get(cacheKey),
-        cached: true,
-        remainingToday: getRemainingRequests(req),
-        dailyLimit: MAX_REQUESTS_PER_DAY
-      });
-    }
+  ...mapCache.get(cacheKey),
+  cached: true,
+  remainingToday: getRemainingRequests(req),
+  dailyLimit: DEV_MODE_UNLIMITED_MAPS ? 999 : MAX_REQUESTS_PER_DAY,
+  devMode: DEV_MODE_UNLIMITED_MAPS
+});
 
     if (!consumeRequest(req)) {
       console.log(`[MAP RATE LIMITED] ${title}`);
