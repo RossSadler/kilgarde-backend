@@ -156,6 +156,18 @@ Composition requirements:
 - Grayscale, parchment, or muted natural tones
 - Suitable for a ruined city / roadside / defensive skirmish environment
 
+STRUCTURE BALANCE:
+- Include ONE dominant terrain feature (large ruin, structure, or strongpoint)
+- Include 2-3 medium terrain clusters positioned asymmetrically
+- Include several small scatter groupings across the outer board
+- Do NOT make all terrain pieces similar in size or importance
+
+SPACING:
+- Avoid evenly spacing terrain across the board
+- Create dense zones (clustered terrain) and sparse zones (open ground)
+- Ensure at least one quadrant of the board is relatively open
+- Outer board edges must remain usable for movement and deployment
+
 Gameplay requirements:
 - Include multiple possible movement lanes, not just 2 forced routes
 - At least 3 meaningful avenues of approach across the board
