@@ -242,7 +242,8 @@ app.get("/api/health", (req, res) => {
 app.get("/api/map-credits", (req, res) => {
   return res.json({
     remainingToday: getRemainingRequests(req),
-    dailyLimit: MAX_REQUESTS_PER_DAY
+    dailyLimit: DEV_MODE_UNLIMITED_MAPS ? 999 : MAX_REQUESTS_PER_DAY,
+    devMode: DEV_MODE_UNLIMITED_MAPS
   });
 });
 
