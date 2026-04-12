@@ -20,7 +20,7 @@ if (!process.env.OPENAI_API_KEY) {
 if (!process.env.ADMIN_RESET_KEY) {
   console.warn("Warning: ADMIN_RESET_KEY is not set. Admin reset routes will not work.");
 }
-
+const DEV_MODE_UNLIMITED_MAPS = process.env.DEV_MODE_UNLIMITED_MAPS === "true";
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -89,10 +89,33 @@ function pruneOldTimestamps(timestamps) {
 }
 
 function getRemainingRequests(req) {
+  if (DEV_MODE_UNLIMITED_MAPS) {
+    return 999;
+  }
+
   const key = getClientKey(req);
   const timestamps = pruneOldTimestamps(requestCounts.get(key) || []);
   requestCounts.set(key, timestamps);
   return Math.max(0, MAX_REQUESTS_PER_DAY - timestamps.length);
+}
+
+function consumeRequest(req) {
+  if (DEV_MODE_UNLIMITED_MAPS) {
+    return true;
+  }
+
+  const key = getClientKey(req);
+  const now = Date.now();
+  const timestamps = pruneOldTimestamps(requestCounts.get(key) || []);
+
+  if (timestamps.length >= MAX_REQUESTS_PER_DAY) {
+    requestCounts.set(key, timestamps);
+    return false;
+  }
+
+  timestamps.push(now);
+  requestCounts.set(key, timestamps);
+  return true;
 }
 
 function consumeRequest(req) {
