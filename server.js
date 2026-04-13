@@ -385,7 +385,8 @@ app.post("/api/track", async (req, res) => {
       event_type,
       session_id,
       page_url,
-      metadata
+      metadata,
+      user_type
     } = req.body || {};
 
     if (!tool_name || !event_type) {
@@ -402,9 +403,10 @@ app.post("/api/track", async (req, res) => {
         event_type,
         session_id,
         page_url,
-        metadata
+        metadata,
+        user_type
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       `,
       [
         tool_name,
@@ -412,7 +414,8 @@ app.post("/api/track", async (req, res) => {
         event_type,
         session_id || null,
         page_url || null,
-        metadata || {}
+        metadata || {},
+        user_type || "public"
       ]
     );
 
@@ -431,15 +434,23 @@ app.get("/api/metrics/summary", async (req, res) => {
       });
     }
 
-    const result = await pool.query(`
+    const userType = req.query.user_type || null;
+    const whereClause = userType ? "WHERE user_type = $1" : "";
+    const params = userType ? [userType] : [];
+
+    const result = await pool.query(
+      `
       SELECT
         event_type,
         COUNT(*)::int as count
       FROM tool_events
-      WHERE created_at > NOW() - INTERVAL '7 days'
+      ${whereClause}
+      AND created_at > NOW() - INTERVAL '7 days'
       GROUP BY event_type
       ORDER BY count DESC
-    `);
+      `.replace("\n      AND", userType ? "\n      AND" : "\n      WHERE"),
+      params
+    );
 
     return res.json(result.rows);
   } catch (err) {
@@ -457,39 +468,63 @@ app.get("/api/metrics/dashboard", async (req, res) => {
   }
 
   try {
-    const totalEvents = await pool.query(`
-      SELECT COUNT(*) FROM tool_events;
-    `);
+    const userType = req.query.user_type || null;
+    const whereClause = userType ? "WHERE user_type = $1" : "";
+    const params = userType ? [userType] : [];
 
-    const sessions = await pool.query(`
-      SELECT COUNT(DISTINCT session_id) FROM tool_events;
-    `);
+    const totalEvents = await pool.query(
+      `
+      SELECT COUNT(*) FROM tool_events
+      ${whereClause};
+      `,
+      params
+    );
 
-    const eventsByType = await pool.query(`
+    const sessions = await pool.query(
+      `
+      SELECT COUNT(DISTINCT session_id) FROM tool_events
+      ${whereClause};
+      `,
+      params
+    );
+
+    const eventsByType = await pool.query(
+      `
       SELECT event_type, COUNT(*) as count
       FROM tool_events
+      ${whereClause}
       GROUP BY event_type;
-    `);
+      `,
+      params
+    );
 
-    const conversion = await pool.query(`
+    const conversion = await pool.query(
+      `
       SELECT
         COUNT(*) FILTER (WHERE event_type = 'generate_success')::float /
         NULLIF(COUNT(*) FILTER (WHERE event_type = 'generate_clicked'), 0)
         AS conversion_rate
-      FROM tool_events;
-    `);
+      FROM tool_events
+      ${whereClause};
+      `,
+      params
+    );
 
-    const daily = await pool.query(`
+    const daily = await pool.query(
+      `
       SELECT
         DATE_TRUNC('day', created_at) AS day,
         COUNT(*) AS total_events,
         COUNT(DISTINCT session_id) AS sessions,
         COUNT(*) FILTER (WHERE event_type = 'generate_success') AS generates
       FROM tool_events
+      ${whereClause}
       GROUP BY day
       ORDER BY day DESC
       LIMIT 30;
-    `);
+      `,
+      params
+    );
 
     return res.json({
       totalEvents: Number(totalEvents.rows[0].count),
